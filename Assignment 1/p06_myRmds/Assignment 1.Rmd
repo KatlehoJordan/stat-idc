@@ -1,0 +1,228 @@
+---
+title: "Assignment 1"
+date: "2021-10-02"
+knit: (function(inputFile, encoding) {
+    rmarkdown::render(inputFile, encoding = encoding, output_dir = "p03_outputs")
+  })
+output:
+    word_document:
+        toc: true
+---
+
+```{r eval=FALSE, include=FALSE}
+This template includes information about the requiered chunks and the prefered format of text, diagrams and tables. All chunks with information only, are set to not produce any text in the output file.
+
+Always start with saving this template to your designated fplder with a new name.
+
+You must always include a chunk which is loading all packages that you use during the kniting session.
+
+You must also always include a chunk with scripts that import all the data that is needed for the kniting session. This can either be one single chunk with many separate scripts or several chunks with one script each.
+In this assignment you will need one dataset named Chlamydia. Be sure to include the last version of the datset including all variables.
+
+```
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+library(RcmdrMisc) #this chunk start all functions of RCommander
+#library(multcomp) #needed for posthoc test after ANOVA. Remove the # to activate
+#library()if you have used other packages you may need to include them here
+```
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+#include a chunk that opens your data in R. If you import the data in RCommander you can copy-paste the chunk that is produced in Rcommander directly into this RMarkdown file 
+```
+
+## Introduction
+
+In all scientific work we need good descriptions of real patterns to be able to understand the processes behind them. Therefore, the aim of this assignment is to practice the "data and researcher get together process", and also to give you a first glimpse of the power of **R**.
+
+This assignment address the following learnig outcomes
+
+-   knowledge of basic statistical concepts: independent observations, maximum likelihood, linear model, analysis of variance/deviance, error distributions.
+
+-   an understanding of the importance of independent observations in sampling data for analysis.
+
+## Method
+
+In this assignment we first look at some basic **R** functions and different options for working with **R** (Golisher 2008). We make a dataset by downloading Chlamydia incidence data from the Public Health Agency of Sweden (2021). This data is used in RStudio and Excel to produce diagrams showing the develpment of Chlamydia in Sweden from 2011 - 2021
+
+## Result
+
+```{r eval=FALSE, include=FALSE}
+Include the important result from your analyses.
+All diagrams need to have a Figure legend. The figure legend kan be either written below the diagram chunk, or be included in the first row in the chunk with the command fig.cap="".
+You can also controll the size of the diagrams with fig.height= and fig.width=
+
+Example {r, fig.height=7, fig.width=7, fig.cap="Fig.1 Everything you write in between the quotation marks will be added as a figrue caption under the figure"}
+
+Have a short informative running text explaining the results.
+
+Add scripts in R chunks. Additional chunks can be included with the "insert"" button
+```
+
+### Data import  
+
+Instead of manual data wrangling in excel, I decided to wrangle in `R` directly. First I downloaded each of the excel files. Then I built a loop to cycle through each file, wrangle the data, then append it to my output dataset.
+
+```{r importData}
+
+library(readxl)
+library(tidyverse)
+
+for (file in list.files('p02_inputs/')) {
+    
+    if (file == list.files('p02_inputs/')[1]) year <- 11
+    
+    localDs <- read_excel(paste0('p02_inputs/', file))
+
+    localDs %<>% 
+        filter(Landsting == 'Totalt') %>% 
+        select(contains('inc')) %>% 
+        pivot_longer(cols = everything()) %>% 
+        rename(Time = name, Incidence = value) %>% 
+        mutate(Time = paste0(str_sub(Time, 1, 3), '-', year))
+        
+    if (file == list.files('p02_inputs/')[1]) {
+        chlamydia2011to2021 <- localDs
+    }  else {
+        chlamydia2011to2021 %<>% rbind(localDs)
+        year <- year + 1
+        }
+}
+```
+
+### Index plot  
+
+```{r indexPlot, fig.cap = 'Figure 1: The figure shows the incidence of Chlamydia per 100 000 individuals in Sweden from 2011 through 2021.'}
+library(RcmdrMisc)
+indexplot(chlamydia2011to2021[,'Incidence', drop = FALSE], type = 'h'
+          , id.method = 'y', id.n = 0, ylab = 'Incidence/100000'
+          , ylim = c(0, 50), cex.lab = 1.5, cex.axis = 1.5, las = 1)
+abline(h = 0, col = 'red')
+```
+
+### Scatter plots  
+
+The next step was to build scatterplots after splitting the `Time` variable into an additional variable called `Month`. The instructions indicated manual data wrangling in Excel, but again I opted to do it directly in `R`.
+
+```{r addingMonth, fig.cap = 'Figure 2: This figure shows the incidence of Chlamydia per 100 000 individuals in Sweden from 2011 through 2021 as a scatterplot and a smoothed line where the smoothing parameter was set to 20.'}
+chlamydia2011to2021 %<>% 
+    mutate(Month = seq.int(nrow(chlamydia2011to2021)))
+
+scatterplot(Incidence ~ Month, regLine = FALSE
+            , smooth = list(span = 0.2, spread = F)
+            , boxplots = FALSE, cex.axis = 1.3, cex.lab = 1.3
+            , data = chlamydia2011to2021
+            )
+```
+
+#### Alternative lines of best fit  
+
+```{r sp2, fig.cap = 'Figure 3: This figure shows the incidence of Chlamydia per 100 000 individuals in Sweden from 2011 through 2021 as a scatterplot and a smoothed line where the smoothing parameter was set to 100.'}
+scatterplot(Incidence ~ Month, regLine = FALSE
+            , smooth = list(span = 1, spread = F)
+            , boxplots = FALSE, cex.axis = 1.3, cex.lab = 1.3
+            , data = chlamydia2011to2021
+            )
+```
+
+```{r sp3, fig.cap = 'Figure 4: This figure shows the incidence of Chlamydia per 100 000 individuals in Sweden from 2011 through 2021 as a scatterplot and a line of best fit by the least-squares method.'}
+scatterplot(Incidence ~ Month, regLine = T
+            , smooth = F
+            , boxplots = FALSE, cex.axis = 1.3, cex.lab = 1.3
+            , data = chlamydia2011to2021
+            )
+```
+
+#### Rolling means  
+
+The next step was to build charts with running means after calculating the running means in Excel. Again I opted to do it directly in `R`. I am familiar with the `RcppRoll` package for moving window aggregations, so that is what I started with. The lesson also introduced me to the `igraph` package, which has similar functions. The difference between `RcppRoll::roll_mean` and `igraph::running.mean` is that the `RccpRoll` version defaults to so-called 'center' alignment, but permits 'left' or 'right' alignment of the window function, whereas the `igraph` package only permits 'left' alignment. Another difference is that the `RccpRoll` version allows specification of how to populate the values for which no rolling-aggregation can be calculated, whereas the `igraph` version simply drops cases altogether. This means that the `RccpRoll` version 'plays well' with the `tidyverse` syntax, permitting column-binding / creation of new variables within a `data.frame` (a `tibble`, actually) in a single step.
+
+```{r cumMean, fig.cap = 'Figure 5: This figure shows the incidence of Chlamydia per 100 000 individuals in Sweden from 2011 through 2021 as a scatterplot as well as the 6- and 12-month rolling means.'}
+library(RcppRoll)
+library(igraph)
+chlamydia2011to2021 %<>% 
+    mutate(RM1 = roll_mean(Incidence, 6, align = 'right', fill = NA)
+           , RM2 = roll_mean(Incidence, 12, align = 'right', fill = NA)
+           )
+
+m1 <- chlamydia2011to2021 %>% 
+        filter(not(is.na(RM1)))
+
+m2 <- chlamydia2011to2021 %>% 
+        filter(not(is.na(RM2)))
+
+plot(chlamydia2011to2021$Incidence, xlab = 'Months'
+     , ylab = 'Chlamydia incidence / 100 000', las = 1)
+
+lines(m1$Month, m1$RM1, lty = 3)
+lines(m2$Month, m2$RM1, lty = 1)
+
+legend(0, 20
+       , legend = c("Running mean 6 months", "Running mean 12 months")
+       , lwd = 2, lty = c(3, 1)
+       )
+
+```
+
+### Seasonal variation  
+
+The next step instructed creating a new variable, `Season`, in Excel and then reloading the data. I did this instead in `R` directly. I then proceeded creating the boxplot as instructed.
+
+#### Box plot  
+
+```{r season, fig.cap = 'Figure 6: This figure shows the incidence of Chlamydia per 100 000 individuals in Sweden from by season (using data from 2011 through 2021).'}
+chlamydia2011to2021 %<>% 
+    mutate(Season = 
+               case_when(
+                   str_detect(Time, 'Jun') |
+                       str_detect(Time, 'Jul') |
+                       str_detect(Time, 'Aug') ~
+                       'Summer'
+                   , str_detect(Time, 'Sep') |
+                       str_detect(Time, 'Okt') |
+                       str_detect(Time, 'Nov') ~
+                       'Autumn'
+                   , str_detect(Time, 'Dec') |
+                       str_detect(Time, 'Jan') |
+                       str_detect(Time, 'Feb') ~
+                       'Winter'
+                   , TRUE  ~ 'Spring')
+           ) %>%
+    mutate(Season = fct_relevel(Season, 'Winter', 'Spring', 'Summer', 'Autumn'))
+
+Boxplot(Incidence~Season, data=chlamydia2011to2021, id = F)
+
+```
+
+The dark horizontal line in each box indicates the median value. The edges of the box indicate the 25^th^ and 75^th^ percentiles. The 'whiskers' extend to the 25^th^ percentile - 1.5 \* the interquartile range and the 75^th^ + 1.5 \* the interquartile range. The dots outside of the whiskers are outliers. Chlamydia cases tend to hit their lowest point in the spring and then increase through the summer and autumn.
+
+#### Means plots  
+
+```{r meanPlotWithSe, fig.cap = 'Figure 7: This figure shows the mean incidence of Chlamydia per 100 000 individuals in Sweden from by season (using data from 2011 through 2021) ± the standard error.'}
+with(chlamydia2011to2021, plotMeans(Incidence, Season, error.bars = "se", 
+  connect = TRUE, main = 'Plot of Means with SE'))
+```
+
+```{r meanPlotWithSd, fig.cap = 'Figure 8: This figure shows the mean incidence of Chlamydia per 100 000 individuals in Sweden from by season (using data from 2011 through 2021) ± the standard deviation.'}
+with(chlamydia2011to2021, plotMeans(Incidence, Season, error.bars = "sd", 
+  connect = TRUE, main = 'Plot of Means with SD'))
+```
+
+```{r meanPlotWithCi, fig.cap = 'Figure 9: This figure shows the mean incidence of Chlamydia per 100 000 individuals in Sweden from by season (using data from 2011 through 2021) ± the 95% confidence interval (CI).'}
+with(chlamydia2011to2021, plotMeans(Incidence, Season, error.bars = "conf.int", 
+  connect = TRUE, main = 'Plot of Means with 95% CI'))
+```
+
+Of the three intervals, the standard deviation covers the largest span.
+
+### Final interpretation  
+
+The plots of means lend support to the interpretation made previously when examining the boxplots. Specifically, Chlamydia rates in Sweden tend to increase from a low point in the Spring to a high point in the Autumn. However, this figure and the analyses herein are not sufficient to determine if the observed trend is statistically significant. Specifically, the overlap in the 95% confidence intervals obfuscates the fact that the underlying data are matched; therefore, there may be a robust and statistically significant seasonality to the data that would be apparent if the mean differences were plotted rather than the means, and if a method of statistical inference were deployed (e.g., one-way RM ANOVA or a Friedman's test if the assumptions for the former are not satisfied).  
+
+## Discussion
+
+In this report there will be no discussion. Instead all result is commented in the result section
+
+## References
+
+Golisher D 2008. R for absolute beginners <https://duncanjg.files.wordpress.com/2008/11/rcoursedraft1.pdf> Public Health Agency of Sweden (2021). Chlamydia data. <https://www.folkhalsomyndigheten.se/folkhalsorapportering-statistik/statistik-a-o/sjukdomsstatistik/klamydiainfektion/?t=county>

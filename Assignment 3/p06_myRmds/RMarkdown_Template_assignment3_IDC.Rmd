@@ -1,0 +1,77 @@
+---
+title: "Assignment 3 IDC"
+author: "Replace with name"
+date: "Replace with date"
+output: word_document
+---
+
+```{r eval=FALSE, include=FALSE}
+This template includes information about the requiered chunks and the prefered format of text, diagrams and tables. All chunks with information only, are set to not produce any text in the output file.
+
+Always start with saving this template to your designated folder with a new name.
+
+You must always include a chunk which is loading all packages that you use during the kniting session.
+
+You must also always include a chunk with scripts that import all the data that is needed for the kniting session. This can either be one single chunk with many separate scripts or several chunks with one script each.
+In this assignment you will need one dataset named Chlamydia. Be sure to include the last version of the datset including all variables.
+
+```
+
+ 
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+library(RcmdrMisc) #this chunk start all functions of RCommander
+#library(multcomp) #needed for posthoc test after ANOVA. Remove the # to activate
+#library()if you have used other packages you may need to include them here
+```
+
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+#include a chunk that opens your data in R. If you import the data in RCommander you can copy-paste the chunk that is produced in Rcommander directly into this RMarkdown file 
+```
+
+
+## Introduction
+
+```{r eval=FALSE, include=FALSE}
+Write an introdoction explaining the aim of the assignment
+```
+
+
+
+## Method
+
+```{r eval=FALSE, include=FALSE}
+Write a method section explaining the analyses you have made. Start with the research question, tell the reader were you found the data (EDE team 2006), and describe the analyses you have made. 
+```
+
+## Result
+
+```{r eval=FALSE, include=FALSE}
+Include the important result from your analyses.
+All diagrams need to have a Figure legend. The figure legend kan be either written below the diagram chunk, or be included in the first row in the chunk with the command fig.cap="".
+You can also controll the size of the diagrams with fig.height= and fig.width=
+
+Example {r, fig.height=7, fig.width=7, fig.cap="Fig.1 Everything you write in between the quotation marks will be added as a figrue caption under the figure"}
+
+Have a short informative running text explaining the results.
+
+Add scripts in R chunks. Additional chunks can be included with the "insert"" button
+```
+
+
+
+
+
+## Discussion
+
+```{r eval=FALSE, include=FALSE}
+In this report you should include your conclussions in the discussion section 
+```
+
+## References
+
+```{r eval=FALSE, include=FALSE}
+Include all references used in a refernce list
+```
+
+

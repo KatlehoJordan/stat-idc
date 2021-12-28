@@ -1,0 +1,339 @@
+---
+title: "Assignment 5"
+date: "2021-10-23"
+knit: (function(inputFile, encoding) {
+    rmarkdown::render(inputFile, encoding = encoding, output_dir = "p03_outputs")
+  })
+output:
+    html_document:
+        toc: true
+---
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+library(RcmdrMisc)
+library(multcomp)
+```
+
+## Introduction
+
+In this assignment, a dataset called `Cells.txt` was used to investigate the incidence of infection in red blood cells as a function of smoking habits and body weight. These data were used for conducting an analysis with generalized linear models: specifically, Poisson and Quasi-Poisson regression.  
+
+A second dataset regarding HIV status and the number of partners individuals has had was also provided by the course material in order to perform logistic regression.  
+
+A third dataset was used for survival analysis, and the source of that data was Altman and Bland (1999) (Reference 2).  
+
+A fourth dataset, from the WHO (Reference 3), was used for nonparametric statistical analyses to investigate the relationship between deaths due to infectious diseases or parasites by continent.  
+
+## Method
+
+All datasets were provided by the course material.  
+
+I used `R`'s `readr` package to import the `Cells.txt`, `Hepatit.txt`, and `Deaths from infectious disese.txt` files since it provides function `read_tsv` for detecting and parsing tab-delimiters.  
+
+For the HIV data, I used `VS Studio Code` to quickly copy-and-paste the data from the course material and then edit it accordingly so as to format it into a `tibble` structrue in `R`.  
+
+When instructed to present summary descriptive statistics, I used a custom function to present the results in a visually-appealing format.  
+
+Otherwise, I followed the assignment instructions, often using `Rcmdr` to get some template code and then modifying it according to my use case in order to generate the tables, figures, and analyses for the assignment.  
+
+When attempting to use the Kruskal-Wallis method instructed by the course, I ran into errors while installing the `Rmpfr` package. I solved these errors after getting tips from a Stack Overflow website (Reference 4).  
+
+### Loading the data
+
+```{r loadData, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(readr)
+cells <- read_tsv('../p02_inputs/Cells.txt') %>% as_tibble()
+
+hiv <- data.frame(
+    Partners = c( 1, 3, 2, 5, 3, 4, 7, 5, 6, 3, 4, 6, 5, 7, 8, 3, 6, 5, 8, 9, 7, 4, 5, 3, 4, 1, 2, 3, 1, 2)
+    , HIV = c(0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0)
+) %>% as_tibble()
+
+hep <- read_tsv('../p02_inputs/Hepatit.txt') %>% as_tibble()
+
+infDisDths <- read_tsv('../p02_inputs/Deaths from infectious disese.txt') %>% as_tibble()
+```
+
+### Creating the custom functions that will be used
+
+```{r defineCustomFunctions}
+# Tabulates descriptive statistics for interval/ratio data in a nice format
+descNum <- function(ds, vector, vectorInPlainEnglish, title = '', subtitle = ''
+                 , buildGtDirectly = TRUE) {
+    results <- ds %>% 
+        summarize(
+            Parameter = paste({{vectorInPlainEnglish}})
+            , `Mean` = mean({{vector}})
+            , SD = sd({{vector}})
+            , Median = median({{vector}}))
+    
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title , subtitle = subtitle
+            ) %>%
+            fmt_number(columns = c(Mean, SD, Median))
+    }
+}
+```
+
+## Results
+
+### Step 1: infection in red blood cells as a function of smoking habits and body weight  
+
+#### Instructions:
+
+Start to look at the data by calculating means for smokers and non-smokers and for normal weight, overweight and obese individuals.  
+
+```{r descStatsCells}
+library(gt)
+
+
+rbind(
+  descNum((cells %>% filter(Smoker != 'no')), Infected, 'Smokers', buildGtDirectly = FALSE)
+  , descNum((cells %>% filter(Smoker == 'no')), Infected, 'Non-smokers', buildGtDirectly = FALSE)
+  , descNum((cells %>% filter(Weight == 'normal')), Infected, 'Normal weight', buildGtDirectly = FALSE)
+  , descNum((cells %>% filter(Weight == 'over')), Infected, 'Overweight', buildGtDirectly = FALSE)
+  , descNum((cells %>% filter(Weight == 'obese')), Infected, 'Obese', buildGtDirectly = FALSE)
+) %>% 
+  gt() %>% 
+    tab_header('Table 1', 'Descriptive Statistics for Infection based on Cohort Characteristics') %>% 
+  fmt_number(columns = c(Mean, SD, Median))
+
+```
+
+#### Instructions:  
+Force R to put the categories in the variable Weight, normal, over and obese in this order in diagrams instead of in alphabetic order
+
+```{r fctReorderCells}
+cells %<>% 
+  mutate(Weight = fct_relevel(Weight, 'normal', 'over', 'obese'))
+```
+
+#### Instructions:  
+Start the model design by entering Infected as dependent variable and Smoker + Weight + Smoker x Weight as dependent. The intercept is default.
+Run this model and look carefully at the result.  
+
+```{r poissonCells}
+poissonCellsModel <- glm(Infected ~ Smoker + Weight + Smoker * Weight, 
+  family=poisson(log), data=cells)
+summary(poissonCellsModel)
+```
+
+#### Instructions:  
+Instead of Poisson distribution use the Quasipoisson distribution. This will force R to include a dispersion parameter that control for the extra variance.
+Run the Poisson regression and interpret the result.  
+
+
+```{r quasipoissonCells}
+quasipoissonCellsModel <- glm(Infected ~ Smoker + Weight + Smoker * Weight,
+  family=quasipoisson(log), data=cells)
+summary(quasipoissonCellsModel)
+```
+
+##### Answer:  
+Both models --- the Poisson- and the quasi-Poisson-regression models --- identify significant effects of smoking and weight and smoking * weight interactions on the count of infected cells; every coefficient term  had a p-value under 0.05 in both models.  
+
+
+#### Instructions:  
+In addition you also need to calculate an ANOVA table. In RCommander, look under Models find Hypothesis tests and ANOVA table. Make a Type II test which will give you an ANOVA table to interpret.  
+
+```{r anovaCells}
+Anova(quasipoissonCellsModel, type="II", test="LR")
+```
+
+#### Instructions:  
+In the ANOVA table you must start to look at the interaction term Smoking x Weight. If this term is significant you need to interpret the interaction by looking at the table of estimates. Once you have decided on which model to interpret you can also look at an effect plot.  
+
+```{r effectPlotsCells, fig.cap='Figure 1: Effect Plot of Infected ~ Smoker + Weight + Smoker * Weight with Quasi-Poisson Regression'}
+library(effects)
+plot(allEffects(quasipoissonCellsModel))
+```
+
+
+
+#### Instructions:  
+For easier interpretation you can make a table of the means and a barplot.  
+
+```{r altVisualization, fig.cap='Figure 2: Barplot of Infected ~ Smoker + Weight + Smoker * Weight'}
+attach(cells)
+tapply(Infected, list(Smoker,Weight),mean)
+barplot(tapply(Infected, list(Smoker,Weight), mean), col=c(1,3), beside=T
+        , ylab="mean of # of infected cells"
+        )
+legend(1.2,3, c("no","yes"), fill=c(1,3))
+detach(cells)
+```
+
+#### Instructions:  
+Make an interpretation.  
+
+##### Answer:  
+Although both predictor variables independently relate to the number of infected cells --- with smoking increasing the number of infected cells and increased weight status also increasing the number of infected cells --- there also exists a significant interaction between smoking status and weight status.  
+
+Specifically, the increase in infected cell number is more drastic as weight increases in non-smokers, whereas in smokers the increases in infected cell numbers with increases in weight is less-pronounced (although still present).  
+
+### Step 2: Logistic Regression on Individual-Based Data  
+
+#### Instructions:  
+Use RCommander and make a logistic regression using number of partners as independent variable and HIV status as dependent variable. Use the binomial distribution family and log link.
+
+##### NOTE:  
+The instructions specified using a 'log' link function. However, the course notes indicate the link function for logistic regression is 'logit', not 'log'. Furthermore, modifying the `R` code to use `binomial(log)` instead of `binomial(logit)` results in an error message and failure to execute. Thus, I used `binomial(log)` instead of following the assignment instructions blindly.  
+
+```{r logHiv}
+logHivModel <- glm(HIV ~ Partners,
+  family=binomial(logit), data=hiv)
+summary(logHivModel)
+exp(coef(logHivModel))  # Exponentiated coefficients ("odds ratios")
+```
+
+
+#### Instructions:  
+Look at the residual deviance/DF ratio in the same way as in the Poisson regression. If the ratio is substantially larger than 1 use the Quasibinomial family instead.
+
+##### Answer:  
+I will not use quasibinomial in this case.  
+
+#### Instructions:  
+After you have performed the logistic regression and reviewed the statistics you can do a graph to show the relationship between number of partners and HIV status. Start to make a scatterplot without lines and marginal boxes. Adjust point size and font size. Now you can add a trend line showing the relationship on the probability scale.
+
+```{r hivScatter, fig.cap='Figure 3: HIV status as it relates to Number of Unprotected Sexual Partners'}
+
+hiv %>% 
+  mutate(predicted = predict(logHivModel, hiv, type = 'response')) %>% 
+  ggplot(aes(x = Partners, y = HIV, alpha = 0, size = 2.5)) +
+  geom_jitter(width = 0.15, height = 0.15) +
+  geom_line(aes(x = Partners, y = predicted), color='red', size = 2) +
+  theme(legend.position = 'none') +
+  scale_x_continuous(limits = c(-0.5, 9.5)) +
+  scale_y_continuous(limits = c(-0.5, 1.5))
+
+```
+
+
+#### Instructions:  
+Make an interpretation.  
+
+##### Answer:  
+As the number of partners with whom a homosexual male had sex with in 1990 increased, so did the risk of testing positive for HIV. More specifically, as indicated in Figure 3, if a male had unprotected sexwith 6 or more partners, the model would predict the individual would test positive for HIV.  
+
+### Step 3: Survival Analysis with data regarding Hepatitis  
+
+#### Instructions:  
+Load a library called survival that contains the appropriate test tools. Start to make a survival plot.  
+
+```{r survPlot, fig.cap = 'Figure 4: Survival Curves for those treated with or without Prednisolone'}
+library(survival)
+attach(hep)
+plot(survfit(Surv(Death,Status)~Treatment),lty=c(1:2),ylab="Survourship",xlab="Time")
+detach(hep)
+```
+
+#### Instructions:  
+Find the mean time (months) to death for the two treatments (drug, placebo).  
+
+```{r descHep}
+rbind(
+  descNum((hep %>% filter(Treatment == 'Prednisolone' & Status == 1)), Death, 'Prednisolone-treated', buildGtDirectly = FALSE)
+  , descNum((hep %>% filter(Treatment == 'Control' & Status == 1)), Death, 'Control group', buildGtDirectly = FALSE)
+) %>% 
+  gt() %>% 
+    tab_header('Table 2', 'Descriptive Statistics for Time To Death Based on Treatment Status') %>% 
+  fmt_number(columns = c(Mean, SD, Median))
+```
+
+
+#### Instructions:  
+Test if the two treatments have significantly different hazards.  
+
+```{r survStat}
+attach(hep)
+survModel <- survreg(Surv(Death,Status)~Treatment)
+summary(survModel)
+detach(hep)
+```
+
+#### Instructions:  
+Review the result and draw conclusions.  
+
+##### Answer:  
+The prednisolone treatment did have a statistically-significant effect on time-to-death, as indicated by a p-value of 0.037, which is under the typically-accepted threshold of 0.05.  
+
+### Step 4: Nonparametric statistical models  
+
+#### Instructions:  
+Perform a statistical test analysing the possible differences in the median number of deaths due to infections or parasites among continents using the Kruskal-Wallis test.  
+
+```{r kw}
+names(infDisDths) <- make.names(names(infDisDths))
+Tapply(Deaths.from.Infectious.and.parasitic.diseases ~ Continent, median, 
+  na.action=na.omit, data=infDisDths) # medians by group
+kruskal.test(Deaths.from.Infectious.and.parasitic.diseases ~ Continent, 
+  data=infDisDths)
+```
+
+
+#### Instructions:  
+Perform a multiple comparison.  
+
+```{r kwPosthoc}
+# install.packages('gmp')
+# install.packages('Rmpfr')
+# install.packages('PMCMRplus')
+library(PMCMRplus)
+
+infDisDths %<>%
+  mutate(Continent = as.factor(Continent)
+         , Deaths = Deaths.from.Infectious.and.parasitic.diseases)
+
+kruskal_posthoc <-
+  with(infDisDths,
+  kwAllPairsNemenyiTest(x = Deaths
+                        , g = Continent, dist="Tukey")
+  )
+summary(kruskal_posthoc)
+```
+
+
+#### Instructions:  
+Produce an appropriate graph to illustrate the analysis.  
+
+```{r infDisPlot, fig.cap = 'Figure 5: Comparison of Deaths by Infectious Diseases & Parasites by Continent'}
+infDisDths %>% 
+  ggplot(aes(Continent, Deaths.from.Infectious.and.parasitic.diseases)) +
+  geom_boxplot() +
+  scale_y_continuous(labels = scales::number_format())
+```
+
+```{r infDisPlotLogged, fig.cap = 'Figure 6: Comparison of Deaths by Infectious Diseases & Parasites by Continent (log-scaled)'}
+infDisDths %>% 
+  ggplot(aes(Continent, log(Deaths.from.Infectious.and.parasitic.diseases))) +
+  geom_boxplot()
+```
+
+#### Instructions:  
+Review the result and make conclusions.  
+
+##### Answer:  
+The Kruskal-Wallis test and post-hoc analyses indicate that Africa and Asia have significantly more deaths due to infectious diseases & parasites than in Europe or the Americas.  
+
+## Discussion
+Infections of the disease in the first dataset are greater if one smokes and one has higher body mass. There is also a significant interaction between smoking- and body-weight-status in regards to how they relate to infection status.  
+
+The more partners with whom a homosexual male had unprotected sex, the greater the likelihood that individual wwould test positive for HIV in 1990.  
+
+The use of Prednisolone increased time to death (i.e., increased length of life) in those with hepatitis.  
+
+According to the WHO's data, Africa and Asia have greater rates of deaths due to infections diseases and parasetes than in the Americas and Europe.  
+
+
+## References
+
+1.  Altman and Bland 1999. Time to event, (survival) data. BJM 317; 468-469.  
+2.  [World Health Organization (WHO) Global Health Estimates: Life expectancy and leading causes of death and disability](http://www.who.int/healthinfo/global_burden_disease/estimates_country/en/index.html)
+3.  [`scale_this` function from Stack Overflow](https://stackoverflow.com/questions/35775696/trying-to-use-dplyr-to-group-by-and-apply-scale)
+4.  [Stack Overflow: installation of package `Rmpfr` had non-zero exit status](https://stackoverflow.com/questions/33750315/installation-of-package-rmpfr-had-non-zero-exit-status)

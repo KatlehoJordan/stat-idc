@@ -1,0 +1,396 @@
+---
+title: "Assignment 3"
+date: "2021-10-23"
+knit: (function(inputFile, encoding) {
+    rmarkdown::render(inputFile, encoding = encoding, output_dir = "p03_outputs")
+  })
+output:
+    html_document:
+        toc: true
+---
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+library(RcmdrMisc)
+library(multcomp)
+```
+
+## Introduction
+
+In this exercise, two datasets were interrogated for statistical significance. The first dataset was environmental conditions (access to drinking water and access to sanitation facilities) over time. The second dataset was heart rate as affected by different types of stress.
+
+## Method
+
+The data for these questions were provided by the exercise prompt for the course, which were in turn obtained from Reference 1 (United Nations Environmental Program (UNEP)).
+
+The general method used was to interrogate data for the appropriateness of using parametric statistical methods by testing assumptions. If assumptions were violated, non-parametric alternatives were selected instead of parametric alternatives. Once the statistical method was determined, data were tested and in many cases figures were generated in addition to tables to present the results of the analyses.
+
+In most cases, custom functions were used to tabulate and organize statistical test results in a structured manner that would render well in a knit markdown document.
+
+### Loading the data
+
+```{r loadData, message=FALSE, warning=FALSE, include=FALSE}
+# Rather than using Excel, I used VS Code to set up the data for direct import into a dataframe
+library(tidyverse)
+envConditions <- data.frame(
+    Year = c(1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012)
+    , Sanitation = c(44.81 , 46.22 , 47.39 , 48.42 , 50.24 , 51.13 , 52.65 , 53.58 , 54.47 , 55.59 , 56.38 , 57.25 , 58.18 , 59.06 , 59.91 , 60.80 , 61.60 , 62.45 , 62.79 , 62.65 , 63.43 , 63.81 , 64.15)
+    , Water = c(73.06, 74.49, 75.32, 76.12, 78.16, 78.89, 79.62, 80.39, 81.10, 81.81, 82.52, 83.23, 83.82, 84.52, 85.19, 85.86, 86.51, 87.14, 87.43, 87.62, 88.22, 88.62, 88.96)
+    ) %>% as_tibble()
+
+hrByStress <- data.frame(
+    Treatment = c('MS', 'MS', 'MS', 'MS', 'MS', 'MS', 'MS', 'MS', 'MS', 'MS', 'CW', 'CW', 'CW', 'CW', 'CW', 'CW', 'CW', 'CW', 'CW', 'CW', 'PE', 'PE', 'PE', 'PE', 'PE', 'PE', 'PE', 'PE', 'PE', 'PE')
+    , HR = c(72, 67, 82, 125, 110, 78, 95, 93, 78, 69, 55, 46, 54, 54, 59, 68, 61, 63, 57, 68, 60, 66, 84, 76, 68, 63, 64, 75, 78, 82)
+) %>% as_tibble()
+
+```
+
+### Creating the custom functions that will be used
+
+```{r defineCustomFunctions}
+# Tabulates results from Shapiro-Wilk tests in a nice format
+tabSwResults <- function(testVector, vectorPlainEnglish
+                         , title = '', subtitle = ''
+                         , buildGtDirectly = TRUE
+                         , alpha = .05) {
+    localVar <- shapiro.test(testVector)
+    
+    results <-
+        data.frame(
+            Data = vectorPlainEnglish
+            , Method = localVar$method
+            , W = localVar$statistic
+            , p = localVar$p.value
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Significantly different than normal distribution'
+                    , p >= alpha ~
+                        'Not significantly different than normal distribution'
+                )
+        )
+    
+    rownames(results) <- NULL
+    
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_number(columns = c(W)) %>% 
+            fmt_scientific(columns = c(p))
+    }
+}
+
+# Tabulates correlation results in a nice format
+tabCorResults <- function(testVector1, testVector2
+                          , formulaInPlainEnglish
+                          , title = '', subtitle = ''
+                          , buildGtDirectly = TRUE
+                          , alternative = 'two.sided', method = 'kendall'
+                          , alpha = .05) {
+    
+    localVar <- cor.test(
+        testVector1
+        , testVector2
+        , alternative = alternative
+        , method = method)
+    
+    localStat <- names(localVar$statistic)
+    localEstimate <- names(localVar$estimate)
+    
+    results <-
+        data.frame(
+            Data = formulaInPlainEnglish
+            , Method = localVar$method
+            , Version = localVar$alternative
+            , stat = localVar$statistic
+            , df = length(testVector1) - 2
+            , estimate = localVar$estimate
+            , p = localVar$p.value
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Significant correlation'
+                    , p >= alpha ~
+                        'Non-significant correlation'
+                )
+        ) %>% 
+        rename( {{localStat}} := stat
+                , {{localEstimate}} := estimate)
+    
+    rownames(results) <- NULL
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_scientific(columns = c({{localStat}}, {{localEstimate}}, p))
+    }
+}
+
+
+```
+
+## Results
+
+### Step 1: Examining the changes in enviornmental conditions over time  
+
+#### Instructions:  
+
+Analyse the relationship between improved sanitation and improved drinking water conditions with a correlation test using the data from table 1.  
+
+
+```{r envConSw}
+rbind(
+  tabSwResults(envConditions$Sanitation, 'Sanitation', buildGtDirectly = F)
+  , tabSwResults(envConditions$Water, 'Water', buildGtDirectly = F)
+  ) %>%
+  gt() %>%
+  tab_header(
+    title = 'Table 1'
+    , subtitle =
+      'Results from Shapiro-Wilk normality tests on environmental conditions'
+    ) %>%
+  fmt_number(columns = c(W)) %>% 
+  fmt_scientific(columns = c(p))
+```
+```{r envConCorr, fig.cap = 'Figure 1: Correlation between Access to Drinking Water and Access to Sanitation Facilities'}
+envConditions %>%
+  ggplot(aes(x = Sanitation, y = Water)) +
+    geom_point(shape = 21) +
+    geom_smooth(method = lm, se = F, color = 'black', size = 0.5) +
+    theme(legend.position = 'none') +
+  ylab('Access to Drinking Water') +
+  xlab('Access to Sanitation Facilities')
+```
+
+```{r sanWatCorr}
+tabCorResults(envConditions$Sanitation, envConditions$Water, 'Access to Sanitation Facilities as it relates to Access to Dirnking Water', 'Table 2', 'Correlation analysis for Access to Sanitation Facilities and Access to Drinking Water', method = 'pearson')
+```
+#### Instructions:  
+Analyse if mean improved sanitation globally is a function of time, by running a linear regression.  
+```{r sanReg}
+sanByYear <- lm(Sanitation~Year, data=envConditions)
+
+# Would like to set aside the time to build functions similar to those I've already built that will extract the results of `summary(model)` into a nice table that is formatted in `gt()`, but due to time constraints have not done so yet.
+summary(sanByYear)
+```
+
+#### Instructions:  
+Generate diagnostic plots for the model.  
+
+
+```{r sanRegDxPlots, fig.cap='Figure 2: Diagnostic Plots for the Regression Model Sanitation ~Year'}
+oldpar <- par(oma=c(0,0,3,0), mfrow=c(2,2))
+plot(sanByYear)
+par(oldpar)
+```
+
+#### Instructions:  
+Run a second order polynomial regression.  
+
+```{r sanRegPoly}
+sanByYearPoly <- lm(Sanitation~Year + I(Year ^ 2), data=envConditions)
+summary(sanByYearPoly)
+```
+#### Instructions:  
+Make a diagnostic plot.  
+```{r sanRegPolyDxPlots, fig.cap='Figure 3: Diagnostic Plots for the Polynomial Regression Model Sanitation ~ Year + I(Year ^ 2)'}
+oldpar <- par(oma=c(0,0,3,0), mfrow=c(2,2))
+plot(sanByYearPoly)
+par(oldpar)
+```
+
+#### Instructions:  
+Make a scatter plot with Sanitation as y-variable and Year as x-variable.  
+
+```{r sanByYearScatter, fig.cap='Figure 4: Access to Sanitation Facilities by Year'}
+scatterplot(Sanitation~Year, regLine=TRUE, smooth=FALSE, boxplots=FALSE, data=envConditions)
+```
+
+#### Instructions:  
+Is the linear least-square line a good predictor of the response y for each x?
+
+##### Answer:  
+It is a decent fit for the years in the middle of the dataset, but consistently over-predicts access to sanitation facilities in earlier and later years.
+
+#### Instructions:  
+Add code to plot the polynomial model also.
+
+```{r sanByYearScatterWithPoly, fig.cap='Figure 5: Access to Sanitation Facilities by Year with first and second order linear regression models'}
+scatterplot(Sanitation~Year, regLine=TRUE, smooth=FALSE, boxplots=FALSE, data=envConditions)
+xx <- seq(1990,2012, length=20)
+lines(xx, predict(sanByYearPoly, data.frame(Year=xx)), col="red")
+```
+
+#### Instructions:  
+Does the line predicted from our second order polynomial regression fit the data well?
+
+##### Answer:  
+Yes, the polynomial model is a better fit for the current data.  
+
+#### Instructions:  
+Which of the two models give the best prediction in the near future?
+
+
+```{r sanByYearScatterForecast, warning = FALSE, fig.cap='Figure 6: Access to Sanitation Facilities by Year with first and second order linear regression models plus future forecast'}
+scatterplot(Sanitation~Year, reg.line=FALSE, smooth=FALSE, spread=FALSE, 
+ id.method='mahal', id.n = 2, boxplots=FALSE, span=0.5, data=envConditions,
+xlim=c(1990, 2021), ylim=c(45,70))
+
+
+xx <- seq(1990,2021, length=20)
+lines(xx, predict(sanByYear, data.frame(Year=xx)), col="green")
+lines(xx, predict(sanByYearPoly, data.frame(Year=xx)), col="red")
+
+```
+#### Instructions:  
+Repeat the same analysis for the improved drinking water coverage.  
+
+```{r watReg}
+watByYear <- lm(Water~Year, data=envConditions)
+summary(watByYear)
+```
+
+
+```{r watRegDxPlots, fig.cap='Figure 7: Diagnostic Plots for the Regression Model Water ~ Year'}
+oldpar <- par(oma=c(0,0,3,0), mfrow=c(2,2))
+plot(watByYear)
+par(oldpar)
+```
+```{r watRegPoly}
+watByYearPoly <- lm(Water~Year + I(Year ^ 2), data=envConditions)
+summary(watByYearPoly)
+```
+```{r watRegPolyDxPlots, fig.cap='Figure 8: Diagnostic Plots for the Polynomial Regression Model Water ~ Year + I(Year ^ 2)'}
+oldpar <- par(oma=c(0,0,3,0), mfrow=c(2,2))
+plot(watByYearPoly)
+par(oldpar)
+```
+
+```{r watByYearScatterForecast, warning = FALSE, fig.cap='Figure 9: Access to Drinking Water by Year with first and second order linear regression models plus future forecast'}
+scatterplot(Water~Year, reg.line=FALSE, smooth=FALSE, spread=FALSE, 
+ id.method='mahal', id.n = 2, boxplots=FALSE, span=0.5, data=envConditions,
+xlim=c(1990, 2021), ylim=c(70,100))
+
+
+xx <- seq(1990,2021, length=20)
+lines(xx, predict(watByYear, data.frame(Year=xx)), col="green")
+lines(xx, predict(watByYearPoly, data.frame(Year=xx)), col="red")
+
+```
+
+### Step 2: Heart Rate as Affected by Stress  
+
+#### Instructions:  
+Perform an analysis of variance ANOVA on the data from the experiment with an additional post-hoc test for pairwise comparisons of means.
+
+```{r hrStressANOVA}
+hrByStress %<>% 
+  mutate(Treatment = as.factor(Treatment))
+
+library(abind, pos=74)
+
+hrByStressorANOVA <- aov(HR ~ Treatment, data=hrByStress)
+summary(hrByStressorANOVA)
+```
+
+```{r hrStressAnovaPostHocs, fig.cap='Figure 10: Post-hoc pairwise comparisons to assess which kind of stressors differentially affect Heart rate'}
+# Would like to set aside the time to build functions similar to those I've already built that will extract the results of `numSummary(model)` into a nice table that is formatted in `gt()`, but due to time constraints have not done so yet.
+with(hrByStress, numSummary(HR, groups=Treatment, statistics=c("mean", "sd")))
+
+local({
+  .Pairs <- glht(hrByStressorANOVA, linfct = mcp(Treatment = "Tukey"))
+  print(summary(.Pairs)) # pairwise tests
+  print(confint(.Pairs, level=0.95)) # confidence intervals
+  print(cld(.Pairs, level=0.05)) # compact letter display
+  old.oma <- par(oma=c(0, 5, 0, 0))
+  plot(confint(.Pairs))
+  par(old.oma)
+})
+```
+
+
+#### Instructions:  
+Look at the diagnostic diagrams in the same way as in Step 1.  
+
+```{r hrStressDxPlots, fig.cap = 'Figure 11: Diagnostic Plots for the ANOVA model of HR ~ Stressor'}
+oldpar <- par(oma=c(0,0,3,0), mfrow=c(2,2))
+plot(hrByStressorANOVA)
+par(oldpar)
+```
+
+
+
+```{r hrByStressTransformReassess, fig.cap='Figure 12: Diagnostic Plots for the ANOVA model of log(HR) ~ Stressor'}
+hrByStressTrans <-
+  hrByStress %>% 
+  mutate(logHr = log(HR))
+
+logHrByStressorANOVA <- aov(logHr ~ Treatment, data=hrByStressTrans)
+
+oldpar <- par(oma=c(0,0,3,0), mfrow=c(2,2))
+plot(logHrByStressorANOVA)
+par(oldpar)
+```
+
+#### Instructions:  
+Is there a significant treatment effect?  
+
+
+```{r summaryloggedANOVA}
+summary(logHrByStressorANOVA)
+```
+##### Answer:  
+Yes, the ANOVA has a p-value under 0.05; thus there is a treatment effect.  
+
+```{r posthocsLoggedANOVA, fig.cap='Figure 13: Post-hoc pairwise comparisons to assess which kind of stressors differentially affect Heart rate (comparisons done on log-transformed HR data)'}
+with(hrByStressTrans, numSummary(logHr, groups=Treatment, statistics=c("mean", "sd")))
+
+local({
+  .Pairs <- glht(logHrByStressorANOVA, linfct = mcp(Treatment = "Tukey"))
+  print(summary(.Pairs)) # pairwise tests
+  print(confint(.Pairs, level=0.95)) # confidence intervals
+  print(cld(.Pairs, level=0.05)) # compact letter display
+  old.oma <- par(oma=c(0, 5, 0, 0))
+  plot(confint(.Pairs))
+  par(old.oma)
+})
+```
+
+##### Answer:  
+The Cold-water stressor elicited lower heart-rates than did either physical exercise or mental stress, as evidenced by significant post-hoc testing (Tukey's method).  
+
+```{r boxplots, fig.cap='Figure 13: HR as affected by different types of stressors'}
+hrByStress %>% 
+  ggplot(aes(x = Treatment, y = HR, fill = Treatment)) +
+  geom_boxplot() +
+  theme(legend.position = 'none')
+```
+
+
+#### Instructions:  
+Can you suggest how this experiment could be improved with simple means?
+
+##### Answer:  
+The researchers did not include a non-stress control group. Thus, with these data alone, one cannot conclude if or to what extent cold-water exposure affects heart rate.    
+
+## Discussion
+
+There is a significant correlation between access to sanitation facilities and drinking water, as detected by the Pearson Product-Moment Correlation method; as one variable increases, the other also tends to increase.
+
+In terms of fitting linear regression models to predict percentage access to sanitation facilities or drinking water based on year, the second-order polynomial functions were better than simple first-order models (see Figure 6 and Figure 9).
+
+Both physical stress and mental stress increase heart rate to a greater extent than cold-water exposure. The pairwise differences were better detected after log-transforming the raw heart rate data.  
+
+## References
+
+1.  [United Nations Environmental Program (UNEP)](http://geodata.grid.unep.ch/)

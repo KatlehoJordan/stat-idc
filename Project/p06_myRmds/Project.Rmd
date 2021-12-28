@@ -1,0 +1,448 @@
+---
+title: "Final Project"
+author: ""
+date: "2021-10-24"
+knit: (function(inputFile, encoding) {
+    rmarkdown::render(inputFile, encoding = encoding, output_dir = "p03_outputs")
+  })
+output:
+    html_document:
+        toc: true
+---
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+library(RcmdrMisc)
+library(multcomp)
+```
+
+## Introduction
+
+In this exercise, I was tasked with performing a trend analysis, an analysis for differences between groups, as well as a third analysis of my own choosing.  
+
+## Method
+
+The data I selected for this exercise is the `Blackmore` dataset from the `car` package in `R`. The information provided by the command `??Blackmore` includes the following description:  
+
+```{r eval=FALSE}
+Exercise Histories of Eating-Disordered and Control Subjects
+Description
+The Blackmore data frame has 945 rows and 4 columns. Blackmore and Davis's data on exercise histories of 138 teenaged girls hospitalized for eating disorders and 98 control subjects.
+
+Usage
+Blackmore
+Format
+This data frame contains the following columns:
+
+subject
+a factor with subject id codes. There are several observations for each subject, but because the girls were hospitalized at different ages, the number of cases and the age at the last case vary.
+
+age
+subject's age in years at the time of observation; all but the last observation for each subject were collected retrospectively at intervals of two years, starting at age 8.
+
+exercise
+the amount of exercise in which the subject engaged, expressed as estimated hours per week.
+
+group
+a factor with levels: control, Control subjects; patient, Eating-disordered patients.
+
+Source
+Personal communication from Elizabeth Blackmore and Caroline Davis, York University.
+
+[Package carData version 3.0-4 Index]
+```
+
+The dataset is rich enough that I was able to achieve all assignment objectives with a single dataset. Specifically, I decided to:
+1. Perform a trend analysis by examining the relationship between age and hours of exercise in control subjects
+2. Perform an analysis for differences between groups by examining if control subjects or patients exercise to a greater extent
+3. Perform a quasibinomial regression using age and exercise as predictors to predict if an individual is likely to be a control subject or a patient
+
+### Loading the data
+
+```{r loadData, message=FALSE, warning=FALSE, include=FALSE}
+library(car)
+library(tidyverse)
+bData <- Blackmore %>% as_tibble()
+```
+
+### Cleaning the data  
+Since multiple data points were gathered from the same subjects over the study, but only the final data point was not exactly at a 2-year interval, to make down-stream analyses more simplified only the final data will be used for each subject.  
+
+```{r datacleaning}
+bData %<>% 
+    group_by(subject) %>% 
+    filter(age == max(age)) %>% 
+    ungroup()
+```
+
+
+### Creating the custom functions that will be used
+
+```{r defineCustomFunctions}
+# Tabulates descriptive statistics for interval/ratio data in a nice format
+descNum <- function(ds, vector, vectorInPlainEnglish, title = '', subtitle = ''
+                 , buildGtDirectly = TRUE) {
+    results <- ds %>% 
+        summarize(
+            Parameter = paste({{vectorInPlainEnglish}})
+            , n = n()
+            , min = min({{vector}})
+            , `Mean` = mean({{vector}})
+            , SD = sd({{vector}})
+            , Median = median({{vector}})
+            , max = max({{vector}})
+        )
+    
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title , subtitle = subtitle
+            ) %>%
+            fmt_number(columns = c(n, Mean, SD, Median))
+    }
+}
+
+# Tabulates results from Shapiro-Wilk tests in a nice format
+tabSwResults <- function(testVector, vectorPlainEnglish
+                         , title = '', subtitle = ''
+                         , buildGtDirectly = TRUE
+                         , alpha = .05) {
+    localVar <- shapiro.test(testVector)
+    
+    results <-
+        data.frame(
+            Data = vectorPlainEnglish
+            , Method = localVar$method
+            , W = localVar$statistic
+            , p = localVar$p.value
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Significantly different than normal distribution'
+                    , p >= alpha ~
+                        'Not significantly different than normal distribution'
+                )
+        )
+    
+    rownames(results) <- NULL
+    
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_number(columns = c(W)) %>% 
+            fmt_scientific(columns = c(p))
+    }
+}
+
+# Tabulates correlation results in a nice format
+tabCorResults <- function(testVector1, testVector2
+                          , formulaInPlainEnglish
+                          , title = '', subtitle = ''
+                          , buildGtDirectly = TRUE
+                          , alternative = 'two.sided', method = 'kendall'
+                          , alpha = .05) {
+    
+    localVar <- cor.test(
+        testVector1
+        , testVector2
+        , alternative = alternative
+        , method = method)
+    
+    localStat <- names(localVar$statistic)
+    localEstimate <- names(localVar$estimate)
+    
+    results <-
+        data.frame(
+            Data = formulaInPlainEnglish
+            , Method = localVar$method
+            , Version = localVar$alternative
+            , stat = localVar$statistic
+            , df = length(testVector1) - 2
+            , estimate = localVar$estimate
+            , p = localVar$p.value
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Significant correlation'
+                    , p >= alpha ~
+                        'Non-significant correlation'
+                )
+        ) %>% 
+        rename( {{localStat}} := stat
+                , {{localEstimate}} := estimate)
+    
+    rownames(results) <- NULL
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_scientific(columns = c({{localStat}}, {{localEstimate}}, p))
+    }
+}
+
+# Tabulates results from a Wilcoxon test in a nice format
+# Has not been tested for paired-Wilcoxon test, so may need to be made more generalizable
+tabWilcoxResults <- function(data, formula, formulaInPlainEnglish, alternative
+                           , title = '', subtitle = ''
+                           , buildGtDirectly = TRUE
+                           , alpha = .05) {
+    
+    localVar <-
+        wilcox.test(formula, alternative = alternative, data = data)
+    
+    meds <- Tapply(formula, median, na.action = na.omit, data = data)
+    
+    group1Name <- paste0('Median for ', tools::toTitleCase(names(meds)[1])
+                         , ' group')
+    group2Name <- paste0('Median for ', tools::toTitleCase(names(meds)[2])
+                         , ' group')
+
+    results <-
+        data.frame(
+            Data = formulaInPlainEnglish
+            , Method = localVar$method
+            , Alternative = localVar$alternative
+            , W = localVar$statistic
+            , p = localVar$p.value
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Medians are significantly different '
+                    , p >= alpha ~
+                        'Medians are not significantly different'
+                    )
+            , group1Med = meds[[1]]
+            , group2Med = meds[[2]]
+            ) %>% 
+        rename(`p-value` = p
+               , {{group1Name}} := group1Med
+               , {{group2Name}} := group2Med
+               )
+    
+    rownames(results) <- NULL
+    
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_scientific(columns = c(W, `p-value`))
+    }
+}
+```
+
+## Results
+
+### Step 1: Exploratory Data Analysis
+
+First, get some basic descriptive statistics.  
+
+```{r eda}
+library(gt)
+rbind(
+descNum(bData %>% filter(group == 'control'), age, 'Final age for control subjects', buildGtDirectly = FALSE)
+, descNum(bData %>% filter(group == 'patient'), age, 'Final age for patients', buildGtDirectly = FALSE)
+, descNum(bData %>% filter(group == 'control'), exercise, 'Hours of exercise per week for control subjects', buildGtDirectly = FALSE)
+, descNum(bData %>% filter(group == 'patient'), exercise, 'Hours of exercise per week for patients', buildGtDirectly = FALSE)
+) %>% 
+    gt() %>% 
+    tab_header('Table 1', 'Descriptive Statistics for the Blackmore dataset') %>% 
+    fmt_engineering(columns = c(Mean, SD, Median))
+```
+
+Then do an exploratory plot.  
+
+```{r scatterplot, fig.cap = 'Figure 1: Scatterplot of Group ~ Age + Exercise'}
+bData %>%
+  ggplot(aes(age, exercise, color = group)) +
+    geom_point() +
+  ylab('Hours of Exercise Per Week') +
+  xlab('Final Age') +
+    scale_color_manual(values = c('darkgray', 'purple'))
+```
+
+### Step 2: Trend analysis --- exercise ~ age  
+
+First, test for assumptions to see if can use parametric methods.  
+```{r testAssumptionsCor}
+rbind(
+    tabSwResults(bData$age, 'Final Age', buildGtDirectly = FALSE)
+    , tabSwResults(bData$exercise, 'Hours of Weekly Exercise', buildGtDirectly = FALSE)
+) %>% 
+    gt() %>% 
+    tab_header('Table 2', 'Shapiro-Wilk tests for normality for Final Age and Hours of Weekly Exercise in the entire cohort') %>% 
+    fmt_engineering(columns = c(W, p))
+```
+
+
+Neither is normally-distributed, so Pearson's Product-Moment Correlation is not appropriate if data are not first transformed.  
+
+```{r retestAssumptionsCor}
+bData %<>%
+    mutate(logAge = log(age)
+           , logExercise = log(exercise)
+           , sqrtAge = sqrt(age)
+           , sqrtExercise = sqrt(exercise)
+           , invAge = 1 / age
+           , invExercise = 1 / exercise)
+
+rbind(
+    tabSwResults(bData$age, 'Final Age', buildGtDirectly = FALSE)
+    , tabSwResults(bData$exercise, 'Hours of Weekly Exercise', buildGtDirectly = FALSE)
+    , tabSwResults(bData$logAge, 'log(Final Age)', buildGtDirectly = FALSE)
+    , tabSwResults(bData$logExercise, 'log(Hours of Weekly Exercise)', buildGtDirectly = FALSE)
+    , tabSwResults(bData$sqrtAge, 'sqrt(Final Age)', buildGtDirectly = FALSE)
+    , tabSwResults(bData$sqrtExercise, 'sqrt(Hours of Weekly Exercise)', buildGtDirectly = FALSE)
+    , tabSwResults(bData$invAge, 'inverse(Final Age)', buildGtDirectly = FALSE)
+    , tabSwResults(bData$invExercise, 'inverse(Hours of Weekly Exercise)', buildGtDirectly = FALSE)
+) %>% 
+    gt() %>% 
+    tab_header('Table 3', 'Shapiro-Wilk tests for normality for transformed Final Age and transformed Hours of Weekly Exercise in the entire cohort') %>% 
+    fmt_engineering(columns = c(W, p))
+```
+
+The data transformations failed to make data normally distributed. Notably, since there are subjects with 0 hours of exercise per week, the log-transformation and inverse-transformations failed. Although the data could have been adjusted prior to transformations --- by adding 0.01 to all cases, for example --- since the age variable is not normally distributed after any of the attempted transformations, I decided to simply proceed with non-parametric methods.  
+
+```{r buildAndAssessModel}
+tabCorResults(bData$age, bData$exercise, 'Hours of Exercise per Week as it relates to Final Age of Subject in the Cohort', 'Table 4', 'Correlation Analysis', method = 'spearman')
+```
+
+The relationship is significant. As age increases, hours of weekly exercise also tends to increase within this cohort.  
+
+```{r cor, fig.cap = 'Figure 2: Scatterplot of Exercise ~ Age with simple line of best fit'}
+bData %>%
+  ggplot(aes(age, exercise)) +
+    geom_point(shape = 21) +
+    geom_smooth(method = lm, se = F) +
+    theme(legend.position = 'none') +
+  ylab('Hours of Exercise Per Week') +
+  xlab('Final Age')
+```
+
+
+### Step 3: Differences between groups --- exercise ~ group  
+
+First, test for assumptions to see if can use parametric methods.  
+```{r testAssumptionsTtest}
+
+pts <- bData %>% filter(group == 'patient')
+cts <- bData %>% filter(group == 'control')
+
+rbind(
+    tabSwResults(cts$exercise, 'Hours of Weekly Exercise in Control Subjects', buildGtDirectly = FALSE)
+    , tabSwResults(pts$exercise, 'Hours of Weekly Exercise in Patients', buildGtDirectly = FALSE)
+) %>% 
+    gt() %>% 
+    tab_header('Table 5', 'Shapiro-Wilk tests for normality in Exercise data by Group') %>% 
+    fmt_engineering(columns = c(W, p))
+```
+
+Neither is normally-distributed, so unpaired t-test is not appropriate if data are not first transformed.  
+
+```{r retestAssumptionsGroups}
+rbind(
+    tabSwResults(cts$sqrtExercise, 'sqrt(Hours of Weekly Exercise) in Control Subjects', buildGtDirectly = FALSE)
+    , tabSwResults(pts$sqrtExercise, 'sqrt(Hours of Weekly Exercise) in Patients', buildGtDirectly = FALSE)
+) %>% 
+    gt() %>% 
+    tab_header('Table 6', 'Shapiro-Wilk tests for normality in sqrt-transformed Exercise data by Group') %>% 
+    fmt_engineering(columns = c(W, p))
+```
+
+One of the groups still has data that is significantly different than a normal distribution. Thus, a Wilcoxon Rank-Sum / Mann-Whitney U test will be used instead of an unpaired-t test.  
+
+```{r wilcoxRes}
+tabWilcoxResults(data = bData, formula = exercise ~ group,formulaInPlainEnglish = 'ex by group', alternative = 'two.sided', title = 'Title', 'subtitle')
+```
+The patient group exercise for more hours per week than do the control group.  
+
+```{r boxplot, fig.cap = 'Figure 3: Boxplot of Exercise ~ Group'}
+bData %>%
+  ggplot(aes(group, exercise, fill = group)) +
+    geom_boxplot() +
+    theme(legend.position = 'none') +
+  ylab('Hours of Exercise Per Week') +
+  xlab('Group') +
+    scale_fill_manual(values = c('beige', 'coral1'))
+```
+
+### Step 4: Quasibinomial regression --- group ~ age + exercise + age * exercise  
+
+```{r qLogModelInt}
+qpModelInt <- glm(group ~ exercise + age + exercise * age, 
+  family=quasibinomial(logit), data=bData)
+summary(qpModelInt)
+```
+The first model had no significant interaction term, so it will be dropped.  
+
+```{r qLogModelSimple, fig.cap= 'Figure 4: Diagnostic plots for quasibinomial model of Group ~ exercise + age + exercise * age'}
+qpModelSimple <- glm(group ~ exercise + age, 
+  family=quasibinomial(logit), data=bData)
+summary(qpModelSimple)
+```
+
+The model detects significant independent effects of exercise and age.  
+
+Visualizing the model predictions.  
+
+```{r visModelPreds, fig.cap = 'Figure 5: Side-by-Side comparison of true classifications and model predictions'}
+bData %>% 
+    mutate(predProb = predict(qpModelSimple, type = 'response'),
+           , predClass = case_when(predProb < 0.5 ~ 'control', TRUE ~ 'patient')
+           ) %>% 
+    rename(`Ground truth` = group
+           , Prediction = predClass) %>% 
+    pivot_longer(cols = c(`Ground truth`, Prediction), names_to = 'type', values_to = 'classification') %>% 
+      ggplot(aes(age, exercise, color = classification)) +
+    geom_point() +
+    facet_wrap(~ type) +
+    # theme(legend.position = 'none') +
+  ylab('Hours of Exercise Per Week') +
+  xlab('Final Age') +
+    scale_color_manual(values = c('cornflowerblue', 'orange'))
+```
+
+```{r visModelPredHitsMisses, fig.cap = 'Figure 6: Correct and incorrect classifications from the model'}
+bData %>% 
+    mutate(predProb = predict(qpModelSimple, type = 'response'),
+           , predClass = case_when(predProb < 0.5 ~ 'control', TRUE ~ 'patient')
+           , predStatus = case_when(group == predClass ~ 'Correct Prediction', group == 'control' ~ 'Incorrectly Labeled as Patient', group == 'patient' ~ 'Incorrectly Labeled as Control Subject')
+           ) %>% 
+    mutate(predStatus = fct_relevel(predStatus, 'Incorrectly Labeled as Control Subject', 'Incorrectly Labeled as Patient', 'Correct Prediction')) %>% 
+      ggplot(aes(age, exercise, color = predStatus)) +
+    geom_point() +
+    # theme(legend.position = 'none') +
+  ylab('Hours of Exercise Per Week') +
+  xlab('Final Age') +
+    scale_color_manual(values = c('red', 'orange', 'green'))
+```
+
+## Discussion
+
+In the cohort from the `Blackmore` data, there was a significant correlation between final age of the subjects and the weekly hours spent exercising, as detected by Spearman's $/rho$.  
+
+The patients in the cohort registered significantly more hours spent exercising per week than did the control subjects, as detected by a Wilcoxon Rank-Sum / Mann-Whitney U test.  
+
+Finally, a quasibinomial model was built to attempt to discriminate between control subjects and patients based on weekly hours spent exercising and final age in the study. Of note, no significant interaction was detected, so the final model did not include an interaction term. The model did detect significant independent effects of both predictor variables (weekly hours spent exercising and final age).  
+
+Of particular importance, if the model were to be used prospectively to help identify young women who were at risk for developing eating disorders that require hospitalization, it misses many individuals under 17 years old who exercise for 5 or fewer hours per week (as identified by the red dots in Figure 6). It remains to be seen if the model may be improved by including other predictor variables such as family history of eating disorders, other comorbidities, or time spent ingesting social media.  
+
+## References
+
+1.  Blackmore and Caroline Davis. Personal communication as indicated by the `car` package in `R`, version 3.0-4.  

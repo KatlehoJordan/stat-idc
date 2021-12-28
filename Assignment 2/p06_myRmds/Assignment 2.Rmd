@@ -1,0 +1,485 @@
+---
+title: "Assignment 2"
+date: "2021-10-23"
+knit: (function(inputFile, encoding) {
+    rmarkdown::render(inputFile, encoding = encoding, output_dir = "p03_outputs")
+  })
+output:
+    html_document:
+        toc: true
+---
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+library(RcmdrMisc)
+library(multcomp)
+```
+
+## Introduction
+
+In this exercise, three datasets were interrogated for statistical significance. The first dataset was heart rate and blood pressure, where a correlation analysis was done. The second dataset was hours of sleep obtained by participants receiving a drug or placebo control. The final dataset was birthweights of babies from mothers with different smoking habits.
+
+## Method
+
+The data for these questions were provided by the exercise prompt for the course, which were in turn obtained from Reference 1 (Ennos 2007).
+
+The general method used was to interrogate data for the appropriateness of using parametric statistical methods by testing assumptions. If assumptions were violated, non-parametric alternatives were selected instead of parametric alternatives. Once the statistical method was determined, data were tested and in many cases figures were generated in addition to tables to present the results of the analyses.
+
+In most cases, custom functions were used to tabulate and organize statistical test results in a structured manner that would render well in a knit markdown document.
+
+### Loading the data
+
+```{r loadData, message=FALSE, warning=FALSE, include=FALSE}
+# Rather than using Excel, I used VS Code to set up the data for direct import into a dataframe
+library(tidyverse)
+hrBp <- data.frame(
+    `Heart rate` = c(
+        67, 75, 63, 89, 53, 76, 98, 75, 71, 65, 69, 74, 80, 58, 76, 68, 64, 76, 79, 72, 60, 67, 63, 90, 50, 73, 64, 68, 65, 70
+    )
+    , `Blood pressure` = c(
+        179, 197, 175, 209, 164, 180, 212, 187, 189, 176, 167, 186, 198, 170, 187, 175, 169, 190, 176, 168, 158, 160, 167, 221, 149, 180, 168, 162, 168, 157
+    )
+) %>% as_tibble()
+
+sleep <- data.frame(
+    Subject = c(1:10)
+    , Drug = c(
+        6.1, 6, 8.2, 7.6, 6.5, 5.4, 6.9, 6.7, 7.4, 5.8
+    )
+    , Placebo = c(
+        5.2, 7.9, 3.9, 4.7, 5.3, 7.4, 4.2, 6.1, 3.8, 7.3
+    )
+) %>% as_tibble()
+
+bwBySmoke <- data.frame(
+    `Birth weight` = c(
+        3,18, 2,74, 2,9, 3,27, 3,65, 3,42, 3,23, 2,86, 3,6, 3,65, 3,69, 3,53, 2,38, 2,34, 3,99, 3,89, 3,6, 3,73, 3,31, 3,7, 4,08, 3,61, 3,83, 3,41, 4,13, 3,36, 3,54, 3,51, 2,71
+    )
+    , `Smoking habit` = c(
+        'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Heavy smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers', 'Non-smokers'
+    )
+) %>% as_tibble()
+
+
+```
+
+### Creating the custom functions that will be used
+
+```{r defineCustomFunctions}
+# Scales a vector to have mean = 0 and sd = 1
+scale_this <- function(x){
+  (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)
+}
+
+# Tabulates descriptive statistics for interval/ratio data in a nice format
+descNum <- function(ds, vector, vectorInPlainEnglish, title = '', subtitle = ''
+                 , buildGtDirectly = TRUE) {
+    results <- ds %>% 
+        summarize(
+            Parameter = paste({{vectorInPlainEnglish}})
+            , `Mean` = mean({{vector}})
+            , SD = sd({{vector}})
+            , Median = median({{vector}}))
+    
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title , subtitle = subtitle
+            ) %>%
+            fmt_number(columns = c(Mean, SD, Median))
+    }
+}
+
+# Tabulates results from Shapiro-Wilk tests in a nice format
+tabSwResults <- function(testVector, vectorPlainEnglish
+                         , title = '', subtitle = ''
+                         , buildGtDirectly = TRUE
+                         , alpha = .05) {
+    localVar <- shapiro.test(testVector)
+    
+    results <-
+        data.frame(
+            Data = vectorPlainEnglish
+            , Method = localVar$method
+            , W = localVar$statistic
+            , p = localVar$p.value
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Significantly different than normal distribution'
+                    , p >= alpha ~
+                        'Not significantly different than normal distribution'
+                )
+        )
+    
+    rownames(results) <- NULL
+    
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_number(columns = c(W)) %>% 
+            fmt_scientific(columns = c(p))
+    }
+}
+
+# Tabulates correlation results in a nice format
+tabCorResults <- function(testVector1, testVector2
+                          , formulaInPlainEnglish
+                          , title = '', subtitle = ''
+                          , buildGtDirectly = TRUE
+                          , alternative = 'two.sided', method = 'kendall'
+                          , alpha = .05) {
+    
+    localVar <- cor.test(
+        testVector1
+        , testVector2
+        , alternative = alternative
+        , method = method)
+    
+    localStat <- names(localVar$statistic)
+    localEstimate <- names(localVar$estimate)
+    
+    results <-
+        data.frame(
+            Data = formulaInPlainEnglish
+            , Method = localVar$method
+            , Version = localVar$alternative
+            , stat = localVar$statistic
+            , df = length(testVector1) - 2
+            , estimate = localVar$estimate
+            , p = localVar$p.value
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Significant correlation'
+                    , p >= alpha ~
+                        'Non-significant correlation'
+                )
+        ) %>% 
+        rename( {{localStat}} := stat
+                , {{localEstimate}} := estimate)
+    
+    rownames(results) <- NULL
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_scientific(columns = c({{localStat}}, {{localEstimate}}, p))
+    }
+}
+
+# Standardizes two vectors to mean = 0 and sd = 1 and plots against random sample of equal n from a normal distribution
+pltStdzdRidges <- 
+    function(dataset, testVector1, testVector2,
+             testVector1InPlainEnglish, testVector2InPlainEnglish) {
+    dataset %>% 
+      mutate(
+        `tV1 standardized` = scale_this(testVector1)
+        , `tV2 standardized` = scale_this(testVector2)
+        , `Random Sample from a Normal Distribution` = rnorm(n())
+        ) %>% 
+    select(`tV1 standardized`
+           , `tV2 standardized`
+           , `Random Sample from a Normal Distribution`
+           ) %>%
+    pivot_longer(
+        cols = c(
+            `tV1 standardized`
+            , `tV2 standardized`
+            , `Random Sample from a Normal Distribution`
+            )
+        , names_to = 'Variables', values_to = 'Standardized values') %>%
+    mutate(
+        Variables =
+            case_when(Variables == 'tV1 standardized' ~
+                          paste0(testVector1InPlainEnglish, ', Standardized')
+                      , Variables == 'tV2 standardized' ~
+                          paste0(testVector2InPlainEnglish, ', Standardized')
+                      , TRUE ~ Variables)
+    ) %>% 
+    ggplot(aes(`Standardized values`, Variables, fill = Variables)) +
+    geom_density_ridges() +
+    theme(legend.position = 'none') +
+  ylab('')
+    }
+
+# Tabulates results from a t-test in a nice format
+
+# This function will need to be modified if one wants to tabulate results
+# from other versions of the t-test (e.g., one-sided, paired, equal-variance)
+# 
+# Also be aware that this function makes a huge presumption about how data is sorted in the case
+# of paired t-tests! Specifically, the t.test call does not permit use of | to specify a
+# grouping variable, and thus, the t.test call presumes your data are already sorted by that
+# variable that has no place in the t.test call!
+
+tabTtestResults <- function(formula
+                            , formulaInPlainEnglish
+                            , title = '', subtitle = ''
+                            , buildGtDirectly = TRUE
+                            , alternative = 'two.sided'
+                            , paired = FALSE
+                            , var.equal = FALSE , alpha = .05) {
+
+    # Do unpaired t-test first regardless in order to extract group means (not in object if paired)
+    localVar <- t.test(formula
+                       , alternative = alternative, paired = FALSE
+                       , var.equal = var.equal, conf.level = (1 - alpha))
+    
+    localMeans <-
+        localVar$estimate %>%
+        enframe() %>%
+        mutate(name = str_replace(name, 'mean in group', 'Mean for ')) %>% 
+        pivot_wider()
+    
+    # Now that have means, run paired t-test if specified necessary
+    if (paired == TRUE) {
+        localVar <- t.test(formula
+                   , alternative = alternative, paired = paired
+                   , var.equal = var.equal, conf.level = (1 - alpha))
+    }
+
+    results <-
+        data.frame(
+            Data = formulaInPlainEnglish
+            , Method = localVar$method
+            , Alternative = localVar$alternative
+            , t = abs(localVar$statistic)
+            , df = localVar$parameter
+            , p = localVar$p.value
+            , lowCI =
+                min(localVar$conf.int[1], localVar$conf.int[2])
+            , uppCI =
+                max(localVar$conf.int[1], localVar$conf.int[2])
+        ) %>%
+        mutate(
+            Interpretation =
+                case_when(
+                    p < alpha ~ 'Significant difference in means'
+                    , p >= alpha ~
+                        'Non-significant difference in means'
+                )
+        ) %>% 
+        cbind(localMeans) %>% 
+        rename(`Mean difference, lower end of CI` = lowCI
+               , `Mean difference, upper end of CI` = uppCI)
+    
+    rownames(results) <- NULL
+    if (buildGtDirectly == F) results
+    else if (buildGtDirectly == T) {
+        results %>% 
+            gt() %>%
+            tab_header(
+                title = title
+                , subtitle = subtitle
+            ) %>%
+            fmt_number(columns = c(t, df
+                                   , `Mean difference, lower end of CI`
+                                   , `Mean difference, upper end of CI`
+                                   , 10, 11)) %>% 
+            fmt_scientific(columns = c(p))
+    }
+}
+```
+
+## Results
+
+### Step 1: Correlating heart rate and blood pressure
+
+#### Instructions:
+
+Statistical data should be reported in the form: Mean ± SD and Median.
+
+```{r descStatsHrBp}
+library(gt)
+rbind(
+descNum(hrBp, Heart.rate, 'Heart rate', buildGtDirectly = FALSE)
+, descNum(hrBp, Blood.pressure, 'Blood pressure', buildGtDirectly = FALSE)
+) %>% 
+    gt() %>% 
+    tab_header('Table 1', 'Descriptive Statistics for Heart Rate and Blood Pressure') %>% 
+    fmt_engineering(columns = c(Mean, SD, Median))
+```
+
+#### Instructions:
+
+Make a box plot for each variable.
+
+```{r boxplotHrBp, fig.cap='Figure 1: Boxplot for heart rate'}
+hrBp %>% 
+    ggplot(aes(x = '', Heart.rate)) +
+    geom_boxplot() +
+    xlab('') + ylab('Heart rate') +
+    theme(legend.position = 'none')
+```
+
+```{r boxplotHrBp2, fig.cap='Figure 2: Boxplot for Blood pressure'}
+hrBp %>% 
+    ggplot(aes(x = '', Blood.pressure)) +
+    geom_boxplot() +
+    xlab('') + ylab('Heart rate') +
+    theme(legend.position = 'none')
+```
+
+#### Instructions:
+
+What does the box plot show?
+
+##### Answer:
+
+The box plots show the dispersion of values within the variable. Specifically, the center line shows the median, the edges of the boxes show the 25th- 75th percentiles, and the ends of the whiskers extend beyond the 25th and 75th percentiles by 1.5 \* the interquartile range (IQR). Any dots that lay beyond the whiskers are data points that lay outside of these values and are outliers.
+
+#### Instructions:
+
+Try to make a plot where you can view if the variables are approximately normally distributed.
+
+```{r hrBpEvalNormality, fig.cap='Figure 3: Kernel-density estimates of standardized HR and BP along with a randomly-generated sample from a normal distribution'}
+set.seed(421)
+library(ggridges)
+pltStdzdRidges(hrBp, hrBp$Heart.rate, hrBp$Blood.pressure, 'Heart Rate', 'Blood Pressure')
+```
+
+```{r hrBpSw}
+rbind(
+  tabSwResults(hrBp$Heart.rate, 'Heart Rate', buildGtDirectly = F)
+  , tabSwResults(hrBp$Blood.pressure, 'Blood Pressure', buildGtDirectly = F)
+  ) %>%
+  gt() %>%
+  tab_header(
+    title = 'Table 2'
+    , subtitle =
+      'Results from Shapiro-Wilk normality tests on Heart Rate and Blood Pressure'
+    ) %>%
+  fmt_number(columns = c(W)) %>% 
+  fmt_scientific(columns = c(p))
+```
+
+#### Instructions:
+
+Is there a correlation between heart rate and blood pressure? Make a proper analysis and show the results as statistic values in the form: correlation coefficient, df, p--value, name of test. Also, make a diagram with Blood pressure as x-variable and Hart rate as y-variable. Use Scatterplot.
+
+```{r hrBpCorr, fig.cap = 'Figure 4: Correlation between Heart Rate and Blood Pressure'}
+hrBp %>%
+  ggplot(aes(x = Heart.rate, y = Blood.pressure)) +
+    geom_point(shape = 21) +
+    geom_smooth(method = lm, se = F, color = 'black', size = 0.5) +
+    theme(legend.position = 'none') +
+  ylab('Blood pressure') +
+  xlab('Heart rate')
+```
+
+```{r hrBpCorRes}
+tabCorResults(hrBp$Heart.rate, hrBp$Blood.pressure, 'Blood Pressure as it relates to Heart Rate', 'Table 3', 'Correlation analysis for blood pressure and heart rate', method = 'pearson')
+```
+
+### Step 2: Examining the effects of a drug on sleep duration
+
+#### Instructions:
+
+What type of t-test would be best to use for an analysis of this experiment. Explain why the statistical test you used will be the best option given this experimental design
+
+##### Answer:
+
+A paired-t test would be best for this kind of experiment since the same research subjects contribute data in both experimental conditions.
+
+```{r sleepBpSw}
+sleep %<>% 
+    mutate(`Difference in hours` = Drug - Placebo
+           , `Second random sample from normal distribution` = rnorm(n()))
+
+tabSwResults(sleep$`Difference in hours`, 'Paired difference in hours between treatments', 'Table 4', 'Normality test for paired differences between treatments')
+```
+
+#### Instructions:
+
+Present the result as statistics in the form: t-value, df, p-value, type of test.
+
+```{r sleepTtest}
+sleepLong <-
+    sleep %>% 
+    pivot_longer(cols = c(Drug, Placebo), names_to = 'Treatment', values_to = 'Hours of sleep')
+
+tabTtestResults(sleepLong$`Hours of sleep` ~ sleepLong$Treatment, 'Hours of sleep by Treatment', 'Table 5', 'T-test results comparing average hours of sleep between drug and placebo-treated groups', paired = TRUE)
+```
+
+#### Instructions:
+
+Also make a graph displaying the central tendency and the spread.
+
+```{r sleepBoxplot, fig.cap='Figure 6: Boxplot for Hours of Sleep by treatment with lines showing individual subject responses in both conditions.'}
+sleepLong %>% 
+    mutate(Subject = as.factor(Subject)) %>% 
+    ggplot(aes(x = Treatment, `Hours of sleep`, fill = Treatment)) +
+    geom_boxplot() +
+    geom_line(aes(group = Subject)) +
+    xlab('') + ylab('Hours of sleep') +
+    guides(fill = F)
+```
+
+### Step 3: Examining the relationship between mother's smoking habits and baby birth weight
+
+#### Instructions:
+
+Make a statistical test for the comparison of birth weights (kg) of children to 14 heavy smokers (mothers) and 15 non-smokers (also mothers) (Table 3).
+
+```{r smokeWeightNormalityTest}
+bwSmoke <-
+  bwBySmoke %>%
+      filter(Smoking.habit == 'Heavy smokers') %>%
+      select(Birth.weight)
+
+bwNonSmoke <-
+  bwBySmoke %>%
+      filter(Smoking.habit == 'Non-smokers') %>%
+      select(Birth.weight)
+
+rbind(
+  tabSwResults(
+    bwSmoke$Birth.weight
+    , 'Birth weight of babies from mothers that are heavy smokers'
+    , buildGtDirectly = F)
+  ,   tabSwResults(
+    bwNonSmoke$Birth.weight
+    , 'Birth weight of babies from mothers that are non-smokers'
+    , buildGtDirectly = F)
+  ) %>%
+  gt() %>%
+  tab_header(
+    title = 'Table 6'
+    , subtitle =
+      "Results from Shapiro-Wilk normality tests on Birth Weights based on Mother's smoking habit"
+    ) %>%
+  fmt_number(columns = c(W)) %>% 
+  fmt_scientific(columns = c(p))
+```
+
+The data do not violate the assumption of normality, so an unpaired t-test will be used to test for differences in group means.
+
+```{r smokeTtest}
+tabTtestResults(bwBySmoke$Birth.weight ~ bwBySmoke$Smoking.habit, "Birth weight by Mother's smoking status", 'Table 7', 'T-test results comparing birth weights of babies from mothers with different smokint habits', paired = FALSE)
+```
+
+## Discussion
+
+There is a significant correlation between heart rate and blood pressure, as detected by the Pearson Product-Moment Correlation method; as one variable increases, the other also tends to increase.
+
+There was no statistically significant effect of the drug investigated in *step 2* of this assignment on sleep duration; the paired t-test was non-significant.
+
+There is a statistically significant difference in birthweights for babies born to mothers who smoke as compared to those whose mothers do not smoke; if a mother smokes, the baby is likely to have a lower birth weight.
+
+## References
+
+1.  Ennos R 2007. Statistical and data handling skills in biology. 2nd ed. Pearson Ed. Ltd, Harlow, England
+2.  [`scale_this` function from Stack Overflow](https://stackoverflow.com/questions/35775696/trying-to-use-dplyr-to-group-by-and-apply-scale)

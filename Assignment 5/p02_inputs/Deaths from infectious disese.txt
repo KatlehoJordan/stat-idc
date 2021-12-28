@@ -1,0 +1,112 @@
+Country	Continent	Deaths from Infectious and parasitic diseases 
+Botswana	Africa	9660
+Burkina Faso	Africa	91890
+Burundi	Africa	47690
+Cameroon	Africa	109270
+Central African Republic	Africa	32750
+Chad	Africa	85930
+Congo	Africa	17020
+Democratic Republic of the Congo	Africa	441690
+Egypt	Africa	24430
+Eritrea	Africa	7500
+Ethiopia	Africa	316560
+Gabon	Africa	4820
+Gambia	Africa	5190
+Ghana	Africa	83420
+Kenya	Africa	151500
+Lesotho	Africa	16260
+Liberia	Africa	17510
+Malawi	Africa	106780
+Mali	Africa	68690
+Morocco	Africa	12020
+Mozambique	Africa	156000
+Namibia	Africa	9400
+Senegal	Africa	36470
+Sierra Leone	Africa	40790
+Somalia	Africa	45060
+South Africa	Africa	361360
+Sudan	Africa	84500
+Swaziland	Africa	9000
+Tunisia	Africa	4560
+Uganda	Africa	182210
+United Republic of Tanzania	Africa	203520
+Zambia	Africa	84460
+Zimbabwe	Africa	116080
+Algeria	Africa	19700
+Angola	Africa	90620
+Niger	Africa	85080
+Nigeria	Africa	859950
+Rwanda	Africa	33160
+Bangladesh	Asia	210770
+China	Asia	314380
+Democratic Peoples Republic of Korea	Asia	25330
+India	Asia	2149130
+Indonesia	Asia	192630
+Afghanistan	Asia	119850
+Cambodia	Asia	26240
+Malaysia	Asia	21490
+Nepal	Asia	35700
+Pakistan	Asia	287410
+Papua New Guinea	Asia	10620
+Philippines	Asia	61050
+Republic of Korea	Asia	6790
+Singapore	Asia	390
+Sri Lanka	Asia	7630
+Thailand	Asia	65830
+Viet Nam	Asia	57870
+Bhutan	Asia	970
+Albania	Europe	270
+Andorra	Europe	10
+Austria	Europe	690
+Belgium	Europe	2590
+Bosnia and Herzegovina	Europe	160
+Bulgaria	Europe	730
+Croatia	Europe	370
+Cyprus	Europe	70
+Czech Republic	Europe	980
+Denmark	Europe	840
+Estonia	Europe	140
+Finland	Europe	450
+France	Europe	11640
+Germany	Europe	13130
+Greece	Europe	1120
+Hungary	Europe	490
+Iceland	Europe	20
+Ireland	Europe	240
+Italy	Europe	8350
+Latvia	Europe	330
+Lithuania	Europe	610
+Luxembourg	Europe	110
+Montenegro	Europe	10
+Netherlands	Europe	2150
+Norway	Europe	960
+Poland	Europe	3210
+Portugal	Europe	3090
+Romania	Europe	2700
+Serbia	Europe	590
+Slovakia	Europe	350
+Slovenia	Europe	160
+Spain	Europe	8100
+Sweden	Europe	1760
+Switzerland	Europe	690
+The former Yugoslav Republic of Macedonia	Europe	160
+United Kingdom	Europe	8210
+Argentina	S. & C. Amer.	16290
+Belize	S. & C. Amer.	130
+Bolivia	S. & C. Amer.	9320
+Brazil	S. & C. Amer.	61070
+Chile	S. & C. Amer.	1990
+Colombia	S. & C. Amer.	9970
+Costa Rica	S. & C. Amer.	430
+Dominican Republic	S. & C. Amer.	6440
+Ecuador	S. & C. Amer.	5580
+El Salvador	S. & C. Amer.	2920
+Guatemala	S. & C. Amer.	11160
+Honduras	S. & C. Amer.	5170
+Nicaragua	S. & C. Amer.	1700
+Panama	S. & C. Amer.	1530
+Paraguay	S. & C. Amer.	2210
+Peru	S. & C. Amer.	14050
+Suriname	S. & C. Amer.	320
+Uruguay	S. & C. Amer.	800
+Venezuela (Bolivarian Republic of)	S. & C. Amer.	7400
